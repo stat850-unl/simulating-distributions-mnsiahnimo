@@ -1,7 +1,9 @@
 ---
 title: "Simulation"
-author: "Your Name Here"
+author: "Michael Nsiah-Nimo"
 format: html
+execute:
+  warning: false
 ---
 
 
@@ -15,14 +17,90 @@ Remember to set your seeds for these exercises so that you get the same answer e
 
 1. Simulate 1000 draws from the exponential distribution $$f(x) = \lambda e^{-\lambda x},\;\;\;\; x\geq0, \text{ with } \lambda=3$$
 
+```{r}
+set.seed(7292)   # seed to reproduce the same results
+n <- 1000
+lambda <- 3
+
+x <- rexp(n, rate = lambda)
+head(x)
+```
+
+
 
 2. Create a density plot of your values. Add the PDF of the exponential(3) distribution to your plot in a different color. How do they compare?
 
+```{r}
+set.seed(7292) 
+
+library(ggplot2)
+
+# Create a data frame for the histogram
+df <- data.frame(x = x)
+
+# Create the plot
+ggplot(df, aes(x = x)) +
+  geom_histogram(aes(y = after_stat(density)), 
+                 bins = 30, 
+                 fill = "gray", 
+                 color = "black") +
+  stat_function(fun = dexp, 
+                args = list(rate = lambda),
+                color = "red", 
+                linewidth = 1) +
+  labs(title = "Simulated Exponential(3) vs True PDF",
+       x = "x",
+       y = "Density") +
+  theme_minimal()
+```
+
+- Both declines exponentially as x increases
+- The density estimate closely follows the theoretical PDF (red curve)
+- The simulated sample behaves like the theoretical distribution.
+
+
 3. How might  you use your 1000 draws to estimate the probability that $x > 1$? Provide an estimate using only your 1000 draws, and compare this estimate to one derived from `pexp` (R) or `scipy.stats.expon.cdf` (Python).
+
+```{r}
+set.seed(7292) 
+
+# Monte Carlo estimate from sample
+p_hat <- mean(x > 1)
+
+# True value using CDF
+p_true <- pexp(1, rate = lambda, lower.tail = FALSE)  # = P(X > 1)
+
+p_hat
+p_true
+p_hat - p_true   # error
+
+```
+
 
 4. What is the average error from using a $n=1000$ simulation instead of a numerical calculation for the probability that $x>1$? Write a function to calculate the error from one simulation, and evaluate that function 100 times to calculate the expected error from using a simulation estimate rather than deterministic numerical integration.
 
+```{r}
+set.seed(7292)
 
+lambda <- 3
+threshold <- 1
+p_true <- pexp(threshold, rate = lambda, lower.tail = FALSE)
+
+one_sim_error <- function(n = 1000, lambda = 3, threshold = 1) {
+  x <- rexp(n, rate = lambda)
+  p_hat <- mean(x > threshold)
+  error <- p_hat - p_true
+  return(error)
+}
+
+
+errs <- replicate(100, one_sim_error(n = 1000))
+
+mean(errs)          # average signed error
+mean(abs(errs))     # average absolute error
+sd(errs)            # variation across runs
+
+```
 
 
 ## Gamma Distribution
@@ -41,13 +119,142 @@ $$f(x | \alpha, \beta) = \frac{\beta^\alpha x^{\alpha-1} e^{-x}}{\Gamma(\alpha)}
 
 1. Write a function that will calculate the MLE $\hat\alpha,\hat\beta$ from a vector $x_{samp}$ of gamma-distributed samples. Your function should have required parameter $x$ and optional parameters $\alpha,\beta$ representing the true values. The function should return a list of $\hat\alpha, \hat\beta$ and, if $\alpha,\beta$ are provided, it should also return $\alpha_{err} = \alpha-\hat\alpha$ and $\beta_{err} = \beta-\hat\beta$. 
 
+```{r}
 
+library(MASS)
+
+fit_gamma <- function(x, alpha = NULL, beta = NULL) {
+  fit <- fitdistr(x, densfun = "gamma")
+  
+  alpha_hat <- fit$estimate[["shape"]]
+  beta_hat  <- fit$estimate[["rate"]]  # rate = beta
+  
+  out <- list(alpha_hat = alpha_hat,
+              beta_hat  = beta_hat)
+  
+  # If true parameters supplied, also return errors
+  if (!is.null(alpha) && !is.null(beta)) {
+    out$alpha_err <- alpha - alpha_hat
+    out$beta_err  <- beta  - beta_hat
+  }
+  
+  return(out)
+}
+
+
+# Example
+#set.seed(7292)
+#x_samp <- rgamma(100, shape = 2, rate = 4)  # true alpha=2, beta=4
+
+#fit_gamma(x_samp, alpha = 2, beta = 4)
+```
 
 
 2. For a grid of $\alpha \times \beta=\{0.25, 0.50, 1.00, 2.00, 4.00\}\times\{0.25, 0.50, 1.00, 2.00, 4.00\}$, sample 100 values from the $\text{gamma}(\alpha,\beta)$ distribution. Provide the true parameter values and plot your error values in an appropriate plot. Take care to choose your plot mappings to support your discussion of the following: What trends (if any) do you notice in the estimation error?
 
+```{r}
+set.seed(7292)
+
+alphas <- c(0.25, 0.5, 1, 2, 4)
+betas  <- c(0.25, 0.5, 1, 2, 4)
+
+grid <- expand.grid(alpha = alphas, beta = betas)
+
+
+gamma_errors <- apply(grid, 1, function(row) {
+  a <- as.numeric(row["alpha"])
+  b <- as.numeric(row["beta"])
+  
+  x <- rgamma(100, shape = a, rate = b)
+  fit <- fit_gamma(x, alpha = a, beta = b)
+  
+  c(alpha_err = fit$alpha_err,
+    beta_err  = fit$beta_err)
+})
+
+gamma_errors <- as.data.frame(t(gamma_errors))
+gamma_results <- cbind(grid, gamma_errors)
+
+head(gamma_results)
+
+```
+
+Plot of errors
+- Heatmap of alpha error
+
+```{r}
+library(ggplot2)
+
+ggplot(gamma_results, aes(x = factor(alpha), y = factor(beta), fill = alpha_err)) +
+  geom_tile() +
+  scale_fill_gradient2(mid = 0) +
+  labs(x = "alpha (shape)", y = "beta (rate)",
+       fill = "alpha error",
+       title = "Error in alpha_hat across (alpha, beta) grid")
+```
+
+- Heatmap of beta error
+```{r}
+library(ggplot2)
+
+ggplot(gamma_results, aes(x = factor(alpha), y = factor(beta), fill = beta_err)) +
+  geom_tile() +
+  scale_fill_gradient2(mid = 0) +
+  labs(x = "alpha (shape)", y = "beta (rate)",
+       fill = "beta error",
+       title = "Error in beta_hat across (alpha, beta) grid")
+```
+
+
+Trend:
+
+- Errors are larger in magnitude for extreme parameter values (α very small or very large).
+
 
 3. Now, let's vary the sample size. For $n=\{20, 30, 50, 100\}$, use your function to evaluate the error for $\alpha=1, \beta=2$. How does the error change as $n$ increases? Provide an appropriate plot as well as a description of the changes for increasing $n$. 
 
+```{r}
+
+set.seed(7292)
+
+ns <- c(20, 30, 50, 100)
+
+sim_list <- lapply(ns, function(n) {
+  reps <- 500
+  errs <- replicate(reps, {
+    x <- rgamma(n, shape = 1, rate = 2)
+    fit <- fit_gamma(x, alpha = 1, beta = 2)
+    c(alpha_err = fit$alpha_err, beta_err = fit$beta_err)
+  })
+  errs <- as.data.frame(t(errs))
+  errs$n <- n
+  errs
+})
+
+gamma_n_results <- do.call(rbind, sim_list)
+
+head(gamma_n_results)
+
+```
 
 
+- Plot of error vs n ( box plots)
+
+```{r}
+
+ggplot(gamma_n_results, aes(x = factor(n), y = alpha_err)) +
+  geom_boxplot() +
+  labs(x = "Sample size n", y = "alpha error",
+       title = "Sampling distribution of alpha_hat error vs n")
+
+ggplot(gamma_n_results, aes(x = factor(n), y = beta_err)) +
+  geom_boxplot() +
+  labs(x = "Sample size n", y = "beta error",
+       title = "Sampling distribution of beta_hat error vs n")
+
+```
+
+As n increases:
+
+- The center of the boxplots stays near 0, which implies the estimator is roughly unbiased
+- The spread of the boxplots shrinks , implying that the estimates becomes more precise. This means both `alpha-hat` and `beta-hat` have smaller variability at larger `n`
